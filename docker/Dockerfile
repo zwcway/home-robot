@@ -55,6 +55,7 @@ RUN set -xe \
     && chmod +x /run.sh
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
+ENV VERSION=1.3
 VOLUME ["/root/.robot","/tmp"]
 WORKDIR /root/home-robot
 
