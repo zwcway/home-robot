@@ -1,3 +1,4 @@
+urllib3
 pyyaml>=4.2b1
 requests==2.21.0
 baidu-aip==2.0.0.1
@@ -11,5 +12,6 @@ markdown==3.0.1
 semver==2.8.1
 websocket==0.2.1
 websocket-client==0.56.0
+pyalsaaudio==0.8.4
 pypinyin
 jieba

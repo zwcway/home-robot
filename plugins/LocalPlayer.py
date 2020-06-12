@@ -6,6 +6,7 @@ from robot.sdk.AbstractPlugin import AbstractPlugin
 
 logger = logging.getLogger(__name__)
 
+
 class Plugin(AbstractPlugin):
 
     IS_IMMERSIVE = True  # 这是个沉浸式技能
@@ -13,7 +14,7 @@ class Plugin(AbstractPlugin):
     def __init__(self, con):
         super(Plugin, self).__init__(con)
         self.player = None
-        self.song_list = None        
+        self.song_list = None
 
     def get_song_list(self, path):
         if not os.path.exists(path) or \
@@ -24,7 +25,7 @@ class Plugin(AbstractPlugin):
 
     def init_music_player(self):
         self.song_list = self.get_song_list(config.get('/LocalPlayer/path'))
-        if self.song_list == None:
+        if self.song_list is None:
             logger.error('{} 插件配置有误'.format(self.SLUG))
         logger.info('本地音乐列表：{}'.format(self.song_list))
         return MusicPlayer(self.song_list, self)

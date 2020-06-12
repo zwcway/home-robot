@@ -7,15 +7,19 @@ import _thread as thread
 from robot import logging
 from ctypes import CFUNCTYPE, c_char_p, c_int, cdll
 from contextlib import contextmanager
+import alsaaudio
 
 logger = logging.getLogger(__name__)
+
 
 def py_error_handler(filename, line, function, err, fmt):
     pass
 
+
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
 c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
 
 @contextmanager
 def no_alsa_error():
@@ -28,21 +32,24 @@ def no_alsa_error():
         yield
         pass
 
-def play(fname, onCompleted=None, wait=False):
+
+def play(fname, delete=False, onCompleted=None, wait=False):
     player = getPlayerByFileName(fname)
-    player.play(fname, onCompleted=onCompleted, wait=wait)
+    player.play(fname, delete=delete, onCompleted=onCompleted, wait=wait)
+
 
 def getPlayerByFileName(fname):
     foo, ext = os.path.splitext(fname)
     if ext in ['.mp3', '.wav']:
         return SoxPlayer()
 
+
 class AbstractPlayer(object):
 
     def __init__(self, **kwargs):
         super(AbstractPlayer, self).__init__()
 
-    def play(self):
+    def play(self, src):
         pass
 
     def play_block(self):
@@ -53,7 +60,7 @@ class AbstractPlayer(object):
 
     def is_playing(self):
         return False
-    
+
 
 class SoxPlayer(AbstractPlayer):
     SLUG = 'SoxPlayer'
@@ -61,12 +68,13 @@ class SoxPlayer(AbstractPlayer):
     def __init__(self, **kwargs):
         super(SoxPlayer, self).__init__(**kwargs)
         self.playing = False
+        self.src = None
         self.proc = None
         self.delete = False
         self.onCompleteds = []
 
     def doPlay(self):
-        cmd = ['play', str(self.src)]
+        cmd = ['/usr/bin/play', '-q', str(self.src)]
         logger.debug('Executing %s', ' '.join(cmd))
         self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.playing = True
@@ -79,12 +87,12 @@ class SoxPlayer(AbstractPlayer):
             for onCompleted in self.onCompleteds:
                 if onCompleted is not None:
                     onCompleted()
-    
+
     def play(self, src, delete=False, onCompleted=None, wait=False):
         if os.path.exists(src) or src.startswith('http'):
             self.src = src
             self.delete = delete
-            if onCompleted is not None:
+            if onCompleted is not None and self.onCompleteds.count(onCompleted) == 0:
                 self.onCompleteds.append(onCompleted)
             if not wait:
                 thread.start_new_thread(self.doPlay, ())
@@ -177,53 +185,56 @@ class MusicPlayer(SoxPlayer):
     def is_pausing(self):
         return self.pausing
 
+    @staticmethod
+    def default_control():
+        mixers = alsaaudio.mixers()
+        if len(mixers) > 0:
+            control = mixers.pop(0)
+        else:
+            control = 'Mixer'
+        return control
+
     def turnUp(self):
         system = platform.system()
+
         if system == 'Darwin':
-            res = subprocess.run(['osascript', '-e', 'output volume of (get volume settings)'], shell=False, capture_output=True, universal_newlines=True)
-            volume = int(res.stdout.strip())
-            volume += 20
+            cmd = ['osascript', '-e', 'output volume of (get volume settings)']
+            res = subprocess.run(cmd, shell=False, capture_output=True, universal_newlines=True)
+            volume = int(res.stdout.strip()) + 20
             if volume >= 100:
                 volume = 100
-                self.plugin.say('音量已经最大啦', wait=True)
+                self.plugin.say('音量已经最大啦', wait=True, resident=True)
             subprocess.run(['osascript', '-e', 'set volume output volume {}'.format(volume)])
         elif system == 'Linux':
-            res = subprocess.run(["amixer sget Master | grep 'Mono:' | awk -F'[][]' '{ print $2 }'"], shell=True, capture_output=True, universal_newlines=True)
-            print(res.stdout)
-            if res.stdout != '' and res.stdout.strip().endswith('%'):
-                volume = int(res.stdout.strip().replace('%', ''))
-                volume += 20
-                if volume >= 100:
-                    volume = 100
-                    self.plugin.say('音量已经最大啦', wait=True)
-                subprocess.run(['amixer', 'set', 'Master', '{}%'.format(volume)])
-            else:
-                subprocess.run(['amixer', 'set', 'Master', '20%+'])
+            mixer = alsaaudio.Mixer(self.default_control())
+            print(mixer.getvolume())
+            volume = int(mixer.getvolume().pop()) + 20
+            if volume >= 100:
+                volume = 100
+                self.plugin.say('音量已经最大啦', wait=True, resident=True)
+            mixer.setvolume(volume)
         else:
-            self.plugin.say('当前系统不支持调节音量', wait=True)
+            self.plugin.say('当前系统不支持调节音量', wait=True, resident=True)
         self.resume()
 
     def turnDown(self):
         system = platform.system()
         if system == 'Darwin':
-            res = subprocess.run(['osascript', '-e', 'output volume of (get volume settings)'], shell=False, capture_output=True, universal_newlines=True)
-            volume = int(res.stdout.strip())
-            volume -= 20
+            cmd = ['osascript', '-e', 'output volume of (get volume settings)']
+            res = subprocess.run(cmd, shell=False, capture_output=True, universal_newlines=True)
+            volume = int(res.stdout.strip()) - 20
             if volume <= 20:
                 volume = 20
-                self.plugin.say('音量已经很小啦', wait=True)
+                self.plugin.say('音量已经很小啦', wait=True, resident=True)
             subprocess.run(['osascript', '-e', 'set volume output volume {}'.format(volume)])
         elif system == 'Linux':
-            res = subprocess.run(["amixer sget Master | grep 'Mono:' | awk -F'[][]' '{ print $2 }'"], shell=True, capture_output=True, universal_newlines=True)
-            if res.stdout != '' and res.stdout.endswith('%'):
-                volume = int(res.stdout.replace('%', '').strip())
-                volume -= 20
-                if volume <= 20:
-                    volume = 20
-                    self.plugin.say('音量已经最小啦', wait=True)
-                subprocess.run(['amixer', 'set', 'Master', '{}%'.format(volume)])
-            else:
-                subprocess.run(['amixer', 'set', 'Master', '20%-'])
+            mixer = alsaaudio.Mixer(self.default_control())
+            print(mixer.getvolume())
+            volume = int(mixer.getvolume().pop()) - 20
+            if volume <= 20:
+                volume = 20
+                self.plugin.say('音量已经最大啦', wait=True, resident=True)
+            mixer.setvolume(volume)
         else:
-            self.plugin.say('当前系统不支持调节音量', wait=True)
+            self.plugin.say('当前系统不支持调节音量', wait=True, resident=True)
         self.resume()

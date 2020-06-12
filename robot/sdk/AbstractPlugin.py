@@ -9,7 +9,7 @@ try:
     sys.path.append(constants.CONTRIB_PATH)
 except Exception as e:
     logger.debug("未检测到插件目录,Error:{}".format(e))
-    
+
 class AbstractPlugin(metaclass=ABCMeta):
     """ 技能插件基类 """
 
@@ -28,8 +28,8 @@ class AbstractPlugin(metaclass=ABCMeta):
     def play(self, src, delete=False, onCompleted=None, volume=1):
         self.con.play(src, delete, onCompleted, volume)
 
-    def say(self, text, cache=False, onCompleted=None, wait=False):
-        self.con.say(text, cache=cache, plugin=self.SLUG, onCompleted=onCompleted, wait=wait)
+    def say(self, text, cache=False, onCompleted=None, wait=False, resident=False):
+        self.con.say(text, cache=cache, plugin=self.SLUG, onCompleted=onCompleted, wait=wait, resident=resident)
 
     def activeListen(self, silent=False):
         return self.con.activeListen(silent)
@@ -77,7 +77,7 @@ class AbstractPlugin(metaclass=ABCMeta):
         暂停当前正在处理的任务，
         当处于该沉浸模式下且被唤醒时，
         将自动触发这个方法，
-        可以用于强制暂停一个耗时的操作        
+        可以用于强制暂停一个耗时的操作
         """
         return
 
@@ -89,4 +89,4 @@ class AbstractPlugin(metaclass=ABCMeta):
         可以自动恢复当前插件的处理逻辑
         """
         return
-    
+

@@ -1,5 +1,5 @@
 # -*- coding: utf-8-*-
-import time 
+import time
 import uuid
 import cProfile
 import pstats
@@ -28,6 +28,7 @@ class Conversation(object):
         self.profiling = profiling
         self.onSay = None
         self.hasPardon = False
+        self.player = None
 
     def getHistory(self):
         return self.history
@@ -63,7 +64,7 @@ class Conversation(object):
 
         if config.get('/LED/enable', False):
             LED.think()
-            
+
         if onSay:
             self.onSay = onSay
 
@@ -150,8 +151,8 @@ class Conversation(object):
     def _onCompleted(self, msg):
         if config.get('active_mode', False) and \
            (
-               msg.endswith('?') or 
-               msg.endswith(u'？') or 
+               msg.endswith('?') or
+               msg.endswith(u'？') or
                u'告诉我' in msg or u'请回答' in msg
            ):
             query = self.activeListen()
@@ -159,15 +160,17 @@ class Conversation(object):
 
     def pardon(self):
         if not self.hasPardon:
-            self.say("抱歉，刚刚没听清，能再说一遍吗？", onCompleted=lambda: self.doResponse(self.activeListen()))
+            oncompleted = lambda: self.doResponse(self.activeListen())
+            self.say("抱歉，刚刚没听清，能再说一遍吗？", onCompleted=oncompleted, resident=True)
             self.hasPardon = True
         else:
-            self.say("没听清呢")
+            self.say("没听清呢", resident=True)
             self.hasPardon = False
 
-    def say(self, msg, cache=False, plugin='', onCompleted=None, wait=False):
-        """ 
+    def say(self, msg, cache=False, plugin='', onCompleted=None, wait=False, resident=False):
+        """
         说一句话
+        :param resident:
         :param msg: 内容
         :param cache: 是否缓存这句话的音频
         :param plugin: 来自哪个插件的消息（将带上插件的说明）
@@ -175,22 +178,20 @@ class Conversation(object):
         :param wait: 是否要等待说完（为True将阻塞主线程直至说完这句话）
         """
         self.appendHistory(1, msg, plugin=plugin)
-        pattern = r'^https?://.+'
-        if re.match(pattern, msg):
+        if re.match(r'^https?://.+', msg):
             logger.info("内容包含URL，所以不读出来")
             self.onSay(msg, '', plugin=plugin)
             self.onSay = None
             return
-        voice = ''
+        voice = utils.getCache(msg, resident=resident)
         cache_path = ''
-        if utils.getCache(msg):
+        if voice:
             logger.info("命中缓存，播放缓存语音")
-            voice = utils.getCache(msg)
-            cache_path = utils.getCache(msg)
+            cache_path = voice
         else:
             try:
-                voice = self.tts.get_speech(msg)
-                cache_path = utils.saveCache(voice, msg)
+                voice = self.tts.get_speech(msg, resident=resident)
+                cache_path = utils.saveCache(voice, msg, resident=resident)
             except Exception as e:
                 logger.error('保存缓存失败：{}'.format(e))
         if self.onSay:
@@ -200,11 +201,10 @@ class Conversation(object):
             self.onSay(msg, audio, plugin=plugin)
             self.onSay = None
         if onCompleted is None:
-            onCompleted = lambda: self._onCompleted(msg)        
-        self.player = Player.SoxPlayer()
+            def onCompleted():
+                self._onCompleted(msg)
+        self.player = Player.getPlayerByFileName(voice)
         self.player.play(voice, not cache, onCompleted, wait)
-        if not cache:
-            utils.check_and_delete(cache_path, 60) # 60秒后将自动清理不缓存的音频
         utils.lruCache()  # 清理缓存
 
     def activeListen(self, silent=False):
@@ -228,14 +228,13 @@ class Conversation(object):
                 utils.check_and_delete(voice)
                 return query
             return ''
-        except Exception as e:            
+        except Exception as e:
             logger.error(e)
-            return ''        
+            return ''
 
     def play(self, src, delete=False, onCompleted=None, volume=1):
         """ 播放一个音频 """
         if self.player:
             self.interrupt()
-        self.player = Player.SoxPlayer()
+        self.player = Player.getPlayerByFileName(src)
         self.player.play(src, delete=delete, onCompleted=onCompleted)
-    
